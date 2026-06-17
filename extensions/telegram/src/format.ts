@@ -43,12 +43,29 @@ function escapeHtmlAttr(text: string): string {
  *
  * Excluded: .ai, .io, .tv, .fm (popular domain TLDs like x.ai, vercel.io, github.io)
  */
+/**
+ * URL schemes that Telegram rich messages accept as link targets.
+ * Local/relative hrefs and unsupported schemes cause RICH_MESSAGE_URL_INVALID
+ * and lose the entire final reply payload.
+ */
+const TELEGRAM_SUPPORTED_LINK_SCHEMES = ["https://", "http://", "tg://"];
+
+function isTelegramSupportedLinkHref(href: string): boolean {
+  return TELEGRAM_SUPPORTED_LINK_SCHEMES.some((scheme) => href.toLowerCase().startsWith(scheme));
+}
+
 function buildTelegramLink(link: MarkdownLinkSpan, text: string) {
   const href = link.href.trim();
   if (!href) {
     return null;
   }
   if (link.start === link.end) {
+    return null;
+  }
+  // Only emit <a> tags for URL schemes Telegram rich messages support.
+  // Local/relative paths and unsupported schemes degrade to visible label
+  // text to avoid RICH_MESSAGE_URL_INVALID rejection of the entire payload.
+  if (!isTelegramSupportedLinkHref(href)) {
     return null;
   }
   // Suppress auto-linkified file references (e.g. README.md → http://README.md)
