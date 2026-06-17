@@ -858,7 +858,10 @@ function handleClaudeLiveControlRequest(
     return;
   }
   const toolUseId = typeof request.tool_use_id === "string" ? request.tool_use_id : undefined;
-  const allowed = turn.execPermission.security === "full" && turn.execPermission.ask === "off";
+  const allowed =
+    turn.execPermission.security !== "deny" &&
+    ((turn.execPermission.security === "full" && turn.execPermission.ask === "off") ||
+      turn.execPermission.ask === "on-miss");
   writeClaudeLiveControlResponse(session, {
     type: "control_response",
     response: {

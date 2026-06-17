@@ -1905,7 +1905,7 @@ ${JSON.stringify({
     }
   });
 
-  it("answers Claude live control_request can_use_tool with deny when exec policy is restrictive", async () => {
+  it("answers Claude live control_request can_use_tool with allow when exec policy is allowlist/on-miss (native tools fall through to CLI permissions)", async () => {
     let stdoutListener: ((chunk: string) => void) | undefined;
     const writes: string[] = [];
     const stdin = {
@@ -1976,9 +1976,8 @@ ${JSON.stringify({
         response: { behavior: string; message: string; decisionClassification: string };
       };
     };
-    expect(parsed.response.response.behavior).toBe("deny");
-    expect(parsed.response.response.decisionClassification).toBe("user_reject");
-    expect(parsed.response.response.message).toContain("security=allowlist");
+    expect(parsed.response.response.behavior).toBe("allow");
+    expect(parsed.response.response.toolUseID).toBe("tool-deny-1");
     const spawnArg = supervisorSpawnMock.mock.calls.at(-1)?.[0] as { argv?: string[] };
     expect(requireArgAfter(spawnArg.argv, "--permission-mode")).toBe("default");
   });
@@ -2114,7 +2113,7 @@ ${JSON.stringify({
     expect(parsed.response.response.toolUseID).toBe("tool-default-allow-1");
   });
 
-  it("answers Claude live control_request can_use_tool with deny when approval defaults are restrictive", async () => {
+  it("answers Claude live control_request can_use_tool with allow when approval defaults are allowlist/on-miss", async () => {
     await withTempExecApprovalsFile(
       {
         version: 1,
@@ -2191,13 +2190,15 @@ ${JSON.stringify({
         const controlResponse = writes.find((entry) => entry.includes('"control_response"'));
         expect(controlResponse, "control_response written to stdin").toBeDefined();
         const parsed = JSON.parse((controlResponse ?? "").trim()) as {
+          type: string;
           response: {
-            response: { behavior: string; message: string; decisionClassification: string };
+            subtype: string;
+            request_id: string;
+            response: { behavior: string; toolUseID?: string };
           };
         };
-        expect(parsed.response.response.behavior).toBe("deny");
-        expect(parsed.response.response.decisionClassification).toBe("user_reject");
-        expect(parsed.response.response.message).toContain("security=allowlist");
+        expect(parsed.response.response.behavior).toBe("allow");
+        expect(parsed.response.response.toolUseID).toBe("tool-approval-default-deny-1");
         const spawnArg = supervisorSpawnMock.mock.calls.at(-1)?.[0] as { argv?: string[] };
         expect(requireArgAfter(spawnArg.argv, "--permission-mode")).toBe("default");
       },
