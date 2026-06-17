@@ -17,6 +17,7 @@ import {
 import { isChatStopCommandText } from "../gateway/chat-abort.js";
 import { formatRelativeTimestamp } from "../infra/format-time/format-relative.ts";
 import { normalizeAgentId } from "../routing/session-key.js";
+import { formatTokenCount } from "../utils/usage-format.js";
 import { helpText, parseCommand } from "./commands.js";
 import type { ChatLog } from "./components/chat-log.js";
 import {
@@ -704,6 +705,44 @@ export function createCommandHandlers(context: CommandHandlerContext) {
         break;
       case "settings":
         openSettings();
+        break;
+      case "status": {
+        const info = state.sessionInfo;
+        const sessionKey = state.currentSessionKey || "unknown";
+        const agentId = state.currentAgentId || "unknown";
+        const model = info.model
+          ? info.modelProvider
+            ? `${info.modelProvider}/${info.model}`
+            : info.model
+          : "unknown";
+        const ctxTokens = typeof info.contextTokens === "number" ? info.contextTokens : null;
+        const total = typeof info.totalTokens === "number" ? info.totalTokens : null;
+        const parts: string[] = [`Session: ${sessionKey}`, `Agent: ${agentId}`, `Model: ${model}`];
+        if (total !== null && ctxTokens !== null && ctxTokens > 0) {
+          const pct = Math.min(999, Math.round((total / ctxTokens) * 100));
+          parts.push(
+            `Context: ${formatTokenCount(total)}/${formatTokenCount(ctxTokens)} (${pct}%)`,
+          );
+        } else if (total !== null) {
+          parts.push(`Context: ${formatTokenCount(total)}/?`);
+        }
+        parts.push(`Compactions: ${info.compactionCount ?? 0}`);
+        if (typeof info.inputTokens === "number" || typeof info.outputTokens === "number") {
+          const inputLabel =
+            typeof info.inputTokens === "number" ? formatTokenCount(info.inputTokens) : "?";
+          const outputLabel =
+            typeof info.outputTokens === "number" ? formatTokenCount(info.outputTokens) : "?";
+          parts.push(`Tokens: ${inputLabel} in / ${outputLabel} out`);
+        }
+        chatLog.addSystem(parts.join(" · "));
+        break;
+      }
+      case "compact":
+        chatLog.addSystem(
+          opts.local
+            ? "/compact is only available in gateway-connected TUI mode"
+            : "/compact is handled by the gateway in connected mode",
+        );
         break;
       case "exit":
       case "quit":
