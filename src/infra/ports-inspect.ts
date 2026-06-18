@@ -645,7 +645,7 @@ async function tryListenOnHost(port: number, host: string): Promise<PortUsageSta
   }
 }
 
-async function checkPortInUse(port: number): Promise<PortUsageStatus> {
+export async function checkPortInUse(port: number): Promise<PortUsageStatus> {
   const hosts = ["127.0.0.1", "0.0.0.0", "::1", "::"];
   let sawUnknown = false;
   for (const host of hosts) {
