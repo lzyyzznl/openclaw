@@ -186,8 +186,12 @@ function decodeWebhookCreateMessage(params: {
   | { kind: "invalid" } {
   const payload = parseWebhookPayload(params.body);
   if (!payload) {
-    writeWebhookError(params.res, 400, WEBHOOK_ERRORS.invalidPayloadFormat);
-    return { kind: "invalid" };
+    // Non-message Talk events (file shares, share-link cards, setup pings, etc.)
+    // don't match the Note-based chat-message schema. Respond 200 and ignore
+    // instead of 400, so Nextcloud does not increment error_count or log
+    // Guzzle stack traces for events the bot was never expected to act on.
+    writeJsonResponse(params.res, 200);
+    return { kind: "ignore" };
   }
   if (payload.type !== "Create") {
     return { kind: "ignore" };

@@ -182,7 +182,7 @@ describe("createNextcloudTalkWebhookServer replay handling", () => {
 });
 
 describe("createNextcloudTalkWebhookServer payload validation", () => {
-  it("rejects malformed webhook payloads after signature verification", async () => {
+  it("silently acknowledges non-message webhook payloads (file shares, etc.)", async () => {
     const payload = {
       type: "Create",
       actor: { type: "Person", id: "alice", name: "Alice" },
@@ -216,8 +216,8 @@ describe("createNextcloudTalkWebhookServer payload validation", () => {
       body,
     });
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "Invalid payload format" });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
   });
 });
 
