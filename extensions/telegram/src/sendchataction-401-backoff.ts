@@ -69,6 +69,20 @@ function is401Error(error: unknown): boolean {
   if (!error) {
     return false;
   }
+
+  // Check structured Telegram error_code first.
+  // An error_code that is not 401 is definitive — it's not a 401 error,
+  // regardless of what the rendered message string may contain.
+  // This prevents miscounting transient errors (e.g., 429 with retry_after=401)
+  // as 401, which would incorrectly suspend the bot and fire a false
+  // token-deletion alarm. See #94787.
+  if (typeof error === "object" && error !== null) {
+    const code = (error as Record<string, unknown>).error_code;
+    if (typeof code === "number" && code !== 401) {
+      return false;
+    }
+  }
+
   const message = error instanceof Error ? error.message : JSON.stringify(error);
   return (
     message.includes("401") || normalizeLowercaseStringOrEmpty(message).includes("unauthorized")

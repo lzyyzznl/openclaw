@@ -176,6 +176,47 @@ describe("createTelegramSendChatActionHandler", () => {
     expect(handler.isSuspended()).toBe(false);
   });
 
+  it("does not miscount a structured 429 whose message contains '401' as a 401 (#94787)", async () => {
+    // grammY renders a 429 flood-wait with retry_after=401 as:
+    //   "Call to 'sendChatAction' failed! (429: Too Many Requests: retry after 401)"
+    // The bare "401" substring match in is401Error used to misclassify this as
+    // a real 401, suspending the bot with a false token-deletion alarm.
+    const make429With401InMessage = () =>
+      Object.assign(
+        new Error("Call to 'sendChatAction' failed! (429: Too Many Requests: retry after 401)"),
+        { error_code: 429, parameters: { retry_after: 401 } },
+      );
+
+    const fn = vi.fn().mockRejectedValue(make429With401InMessage());
+    const logger = vi.fn();
+    const handler = createTelegramSendChatActionHandler({
+      sendChatActionFn: fn,
+      logger,
+      maxConsecutive401: 3,
+    });
+
+    // A structured 429 whose message happens to contain "401" must be
+    // classified as transient (error_code=429), never as a real 401.
+    await expect(handler.sendChatAction(123, "typing")).rejects.toThrow("429");
+
+    // Must NOT be suspended — this is a rate limit, not an auth failure
+    expect(handler.isSuspended()).toBe(false);
+
+    // Must NOT log the false CRITICAL token-deletion alarm
+    const criticalCalls = logger.mock.calls.filter(([msg]) => String(msg).includes("CRITICAL"));
+    expect(criticalCalls).toHaveLength(0);
+
+    // Should log transient cooldown message instead of a 401 backoff message
+    const transientCalls = logger.mock.calls.filter(([msg]) =>
+      String(msg).startsWith("sendChatAction transient error"),
+    );
+    expect(transientCalls.length).toBeGreaterThanOrEqual(1);
+
+    // Should NOT log any 401 error message
+    const calls401 = logger.mock.calls.filter(([msg]) => String(msg).includes("401 error"));
+    expect(calls401).toHaveLength(0);
+  });
+
   it.each([
     ["recoverable network", () => makeNetworkError(), 1000],
     ["Telegram 429", () => makeTelegramError("Too Many Requests", 429, { retry_after: 2 }), 2000],
