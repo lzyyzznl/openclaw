@@ -289,7 +289,11 @@ function coerceMiddlewareContentBlocks(
     // For top-level text blocks that exceed MAX_MIDDLEWARE_TEXT_CHARS,
     // truncate instead of silently dropping — otherwise large tool results
     // (e.g. gateway config.get snapshot) are discarded as invalid.
-    if (normalizedType === "text" && typeof value.text === "string") {
+    if (
+      normalizedType === "text" &&
+      typeof value.text === "string" &&
+      value.text.length > MAX_MIDDLEWARE_TEXT_CHARS
+    ) {
       return [
         {
           type: "text",

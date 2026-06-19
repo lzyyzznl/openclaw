@@ -1324,8 +1324,7 @@ describe("task-registry", () => {
   });
 
   it("delivers delegated ACP completion directly to an explicitly bound Discord thread", async () => {
-    await withTaskRegistryTempDir(async (root) => {
-      process.env.OPENCLAW_STATE_DIR = root;
+    await withTaskRegistryTempDir(async () => {
       resetTaskRegistryForTests();
       const runId = "run-bound-discord-thread-terminal";
       hoisted.sendMessageMock.mockResolvedValue({
@@ -1416,8 +1415,7 @@ describe("task-registry", () => {
   ])(
     "keeps delegated ACP completion queued without an explicit bound Discord thread ($id)",
     async ({ requesterOrigin }) => {
-      await withTaskRegistryTempDir(async (root) => {
-        process.env.OPENCLAW_STATE_DIR = root;
+      await withTaskRegistryTempDir(async () => {
         resetTaskRegistryForTests();
         const runId = `run-non-bound-discord-thread-terminal-${requesterOrigin.channel}-${requesterOrigin.to}`;
         hoisted.sendMessageMock.mockResolvedValue({
