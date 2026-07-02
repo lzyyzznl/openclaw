@@ -668,4 +668,236 @@ describe("pw-tools-core", () => {
     );
     expect(unboundedText.length).toBe(500_000);
   });
+
+  describe("CDP Fetch stream body capture", () => {
+    function cdpTestSetup() {
+      let requestPausedHandler:
+        | ((event: Record<string, unknown>) => void | Promise<void>)
+        | undefined;
+      let ioReadCount = 0;
+
+      const cdpSend = vi.fn(async (method: string): Promise<Record<string, unknown>> => {
+        if (method === "Fetch.enable") return {};
+        if (method === "Fetch.takeResponseBodyAsStream") return { stream: "s1" };
+        if (method === "IO.read") {
+          ioReadCount++;
+          if (ioReadCount === 1) return { data: '{"ok":true,"value":42}', eof: true };
+          return { data: "", eof: true };
+        }
+        if (
+          method === "IO.close" ||
+          method === "Fetch.continueResponse" ||
+          method === "Fetch.disable"
+        ) {
+          return {};
+        }
+        return {};
+      });
+
+      const cdpSession = {
+        send: cdpSend,
+        on: vi.fn((event: string, handler: unknown) => {
+          if (event === "Fetch.requestPaused") {
+            requestPausedHandler = handler as typeof requestPausedHandler;
+          }
+        }),
+        off: vi.fn(),
+        detach: vi.fn(async () => {}),
+      };
+
+      setPwToolsCoreCurrentPage({
+        on: vi.fn(),
+        off: vi.fn(),
+        context: () => ({
+          newCDPSession: vi.fn(async () => cdpSession),
+        }),
+      });
+
+      return {
+        get requestPausedHandler() {
+          return requestPausedHandler;
+        },
+        cdpSend,
+        cdpSession,
+      };
+    }
+
+    it("reads bounded body via CDP Fetch domain stream", async () => {
+      const ctx = cdpTestSetup();
+
+      const resPromise = mod.responseBodyViaPlaywright({
+        cdpUrl: "http://127.0.0.1:18792",
+        targetId: "T1",
+        url: "**/api/data",
+        timeoutMs: 2000,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(ctx.requestPausedHandler).toBeDefined();
+      expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.enable", expect.anything());
+
+      ctx.requestPausedHandler!({
+        requestId: "r1",
+        request: { url: "https://example.com/api/data" },
+        responseHeaders: [
+          { name: ":status", value: "200" },
+          { name: "content-type", value: "application/json" },
+        ],
+      });
+
+      const res = await resPromise;
+      expect(res.url).toBe("https://example.com/api/data");
+      expect(res.status).toBe(200);
+      expect(res.body).toBe('{"ok":true,"value":42}');
+      expect(res.truncated).toBeUndefined();
+
+      expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.takeResponseBodyAsStream", {
+        requestId: "r1",
+      });
+      expect(ctx.cdpSend).toHaveBeenCalledWith("IO.read", {
+        handle: "s1",
+        size: 65536,
+      });
+      expect(ctx.cdpSend).toHaveBeenCalledWith("IO.close", { handle: "s1" });
+      expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.continueResponse", {
+        requestId: "r1",
+      });
+    });
+
+    it("truncates CDP stream at maxBytes cap", async () => {
+      let ioReadCount = 0;
+      let requestPausedHandler:
+        | ((event: Record<string, unknown>) => void | Promise<void>)
+        | undefined;
+
+      const cdpSend = vi.fn(async (method: string): Promise<Record<string, unknown>> => {
+        if (method === "Fetch.enable") return {};
+        if (method === "Fetch.takeResponseBodyAsStream") return { stream: "s1" };
+        if (method === "IO.read") {
+          ioReadCount++;
+          // Return chunk larger than maxBytes=200 (maxChars=50 * 4)
+          if (ioReadCount === 1) return { data: "x".repeat(2000), eof: false };
+          return { data: "x".repeat(2000), eof: false };
+        }
+        if (
+          method === "IO.close" ||
+          method === "Fetch.continueResponse" ||
+          method === "Fetch.disable"
+        ) {
+          return {};
+        }
+        return {};
+      });
+
+      const cdpSession = {
+        send: cdpSend,
+        on: vi.fn((event: string, handler: unknown) => {
+          if (event === "Fetch.requestPaused") {
+            requestPausedHandler = handler as typeof requestPausedHandler;
+          }
+        }),
+        off: vi.fn(),
+        detach: vi.fn(async () => {}),
+      };
+
+      setPwToolsCoreCurrentPage({
+        on: vi.fn(),
+        off: vi.fn(),
+        context: () => ({
+          newCDPSession: vi.fn(async () => cdpSession),
+        }),
+      });
+
+      const resPromise = mod.responseBodyViaPlaywright({
+        cdpUrl: "http://127.0.0.1:18792",
+        targetId: "T1",
+        url: "**/large",
+        timeoutMs: 2000,
+        maxChars: 50,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      requestPausedHandler!({
+        requestId: "r1",
+        request: { url: "https://example.com/large" },
+        responseHeaders: [
+          { name: ":status", value: "200" },
+          { name: "content-length", value: "500000" },
+        ],
+      });
+
+      const res = await resPromise;
+      expect(res.body).toBe("x".repeat(50));
+      expect(res.truncated).toBe(true);
+      // Only one IO.read was needed since our chunk exceeded maxBytes
+      expect(ioReadCount).toBe(1);
+    });
+
+    it("continues non-matching URL immediately without reading body", async () => {
+      const ctx = cdpTestSetup();
+
+      const resPromise = mod.responseBodyViaPlaywright({
+        cdpUrl: "http://127.0.0.1:18792",
+        targetId: "T1",
+        url: "**/target-data",
+        timeoutMs: 2000,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Fire a non-matching response
+      ctx.requestPausedHandler!({
+        requestId: "non-match",
+        request: { url: "https://example.com/other-resource" },
+        responseHeaders: [{ name: ":status", value: "200" }],
+      });
+
+      // Verify it was continued without reading body
+      expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.continueResponse", {
+        requestId: "non-match",
+      });
+      expect(ctx.cdpSend).not.toHaveBeenCalledWith(
+        "Fetch.takeResponseBodyAsStream",
+        expect.anything(),
+      );
+    });
+
+    it("falls back to body()+subarray when CDP session unavailable", async () => {
+      // Page without context() — CDP path fails, fallback to body()+subarray
+      let responseHandler: ((resp: unknown) => void) | undefined;
+      const on = vi.fn((event: string, handler: (resp: unknown) => void) => {
+        if (event === "response") {
+          responseHandler = handler;
+        }
+      });
+      setPwToolsCoreCurrentPage({ on, off: vi.fn() });
+
+      const bodyBytes = new TextEncoder().encode("fallback body");
+      const p = mod.responseBodyViaPlaywright({
+        cdpUrl: "http://127.0.0.1:18792",
+        targetId: "T1",
+        url: "**/fallback",
+        timeoutMs: 1000,
+      });
+
+      await Promise.resolve();
+      if (!responseHandler) throw new Error("expected response handler");
+      responseHandler({
+        url: () => "https://example.com/fallback",
+        status: () => 200,
+        headers: () => ({ "content-type": "text/plain" }),
+        body: async () => bodyBytes,
+      });
+
+      const res = await p;
+      expect(res.url).toBe("https://example.com/fallback");
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("fallback body");
+    });
+  });
 });
