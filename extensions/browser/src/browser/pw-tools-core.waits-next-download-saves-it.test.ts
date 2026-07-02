@@ -524,7 +524,9 @@ describe("pw-tools-core", () => {
     });
 
     await Promise.resolve();
-    if (!responseHandler) throw new Error("expected response handler");
+    if (!responseHandler) {
+      throw new Error("expected response handler");
+    }
     responseHandler(resp);
 
     const res = await p;
@@ -566,7 +568,9 @@ describe("pw-tools-core", () => {
     });
 
     await Promise.resolve();
-    if (!responseHandler) throw new Error("expected response handler");
+    if (!responseHandler) {
+      throw new Error("expected response handler");
+    }
     responseHandler(resp);
 
     const res = await p;
@@ -607,7 +611,9 @@ describe("pw-tools-core", () => {
     });
 
     await Promise.resolve();
-    if (!responseHandler) throw new Error("expected response handler");
+    if (!responseHandler) {
+      throw new Error("expected response handler");
+    }
     responseHandler(resp);
 
     const res = await p;
@@ -677,11 +683,17 @@ describe("pw-tools-core", () => {
       let ioReadCount = 0;
 
       const cdpSend = vi.fn(async (method: string): Promise<Record<string, unknown>> => {
-        if (method === "Fetch.enable") return {};
-        if (method === "Fetch.takeResponseBodyAsStream") return { stream: "s1" };
+        if (method === "Fetch.enable") {
+          return {};
+        }
+        if (method === "Fetch.takeResponseBodyAsStream") {
+          return { stream: "s1" };
+        }
         if (method === "IO.read") {
           ioReadCount++;
-          if (ioReadCount === 1) return { data: '{"ok":true,"value":42}', eof: true };
+          if (ioReadCount === 1) {
+            return { data: '{"ok":true,"value":42}', eof: true };
+          }
           return { data: "", eof: true };
         }
         if (
@@ -739,13 +751,11 @@ describe("pw-tools-core", () => {
       expect(ctx.requestPausedHandler).toBeDefined();
       expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.enable", expect.anything());
 
-      ctx.requestPausedHandler!({
+      await ctx.requestPausedHandler!({
         requestId: "r1",
         request: { url: "https://example.com/api/data" },
-        responseHeaders: [
-          { name: ":status", value: "200" },
-          { name: "content-type", value: "application/json" },
-        ],
+        responseStatusCode: 200,
+        responseHeaders: [{ name: "content-type", value: "application/json" }],
       });
 
       const res = await resPromise;
@@ -766,7 +776,7 @@ describe("pw-tools-core", () => {
         requestId: "r1",
         responseCode: 200,
         responseHeaders: [{ name: "content-type", value: "application/json" }],
-        body: "",
+        body: "eyJvayI6dHJ1ZSwidmFsdWUiOjQyfQ==",
       });
     });
 
@@ -777,12 +787,18 @@ describe("pw-tools-core", () => {
         | undefined;
 
       const cdpSend = vi.fn(async (method: string): Promise<Record<string, unknown>> => {
-        if (method === "Fetch.enable") return {};
-        if (method === "Fetch.takeResponseBodyAsStream") return { stream: "s1" };
+        if (method === "Fetch.enable") {
+          return {};
+        }
+        if (method === "Fetch.takeResponseBodyAsStream") {
+          return { stream: "s1" };
+        }
         if (method === "IO.read") {
           ioReadCount++;
           // Return chunk larger than maxBytes=200 (maxChars=50 * 4)
-          if (ioReadCount === 1) return { data: "x".repeat(2000), eof: false };
+          if (ioReadCount === 1) {
+            return { data: "x".repeat(2000), eof: false };
+          }
           return { data: "x".repeat(2000), eof: false };
         }
         if (
@@ -826,7 +842,7 @@ describe("pw-tools-core", () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      requestPausedHandler!({
+      await requestPausedHandler!({
         requestId: "r1",
         request: { url: "https://example.com/large" },
         responseHeaders: [
@@ -845,18 +861,21 @@ describe("pw-tools-core", () => {
     it("continues non-matching URL immediately without reading body", async () => {
       const ctx = cdpTestSetup();
 
-      const resPromise = mod.responseBodyViaPlaywright({
-        cdpUrl: "http://127.0.0.1:18792",
-        targetId: "T1",
-        url: "**/target-data",
-        timeoutMs: 2000,
-      });
+      // Start request — expected timeout is caught to prevent unhandled rejection
+      void mod
+        .responseBodyViaPlaywright({
+          cdpUrl: "http://127.0.0.1:18792",
+          targetId: "T1",
+          url: "**/target-data",
+          timeoutMs: 2000,
+        })
+        .catch(() => {});
 
       await Promise.resolve();
       await Promise.resolve();
 
       // Fire a non-matching response
-      ctx.requestPausedHandler!({
+      await ctx.requestPausedHandler!({
         requestId: "non-match",
         request: { url: "https://example.com/other-resource" },
         responseHeaders: [{ name: ":status", value: "200" }],
@@ -891,7 +910,9 @@ describe("pw-tools-core", () => {
       });
 
       await Promise.resolve();
-      if (!responseHandler) throw new Error("expected response handler");
+      if (!responseHandler) {
+        throw new Error("expected response handler");
+      }
       responseHandler({
         url: () => "https://example.com/fallback",
         status: () => 200,

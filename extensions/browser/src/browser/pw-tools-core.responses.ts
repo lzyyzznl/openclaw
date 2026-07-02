@@ -43,7 +43,7 @@ export async function responseBodyViaPlaywright(opts: {
   try {
     cdpSession = await page.context().newCDPSession(page);
   } catch {
-    cdpSession = null;
+    // cdpSession stays null
   }
   if (cdpSession) {
     try {
@@ -110,15 +110,15 @@ async function boundedStreamViaCdpFetch(
 
       // Match found — read body via stream.
       done = true;
-      cleanup();
+      clearTimeout(timer);
+      timer = undefined;
+      // cleanup() (Fetch.disable + listener removal) deferred until after
+      // stream operations complete — Fetch.disable before
+      // takeResponseBodyAsStream is undefined behavior per CDP docs.
 
       try {
         const headers = responseHeadersToRecord(evt.responseHeaders);
-        const status =
-          evt.responseHeaders
-            ?.filter((h) => h.name === ":status")
-            .map((h) => Number(h.value))
-            .find((n) => n > 0) ?? undefined;
+        const status = (evt as { responseStatusCode?: number }).responseStatusCode ?? undefined;
 
         const { stream } = (await cdpSession.send(
           "Fetch.takeResponseBodyAsStream" as never,
@@ -127,6 +127,7 @@ async function boundedStreamViaCdpFetch(
 
         const chunks: Buffer[] = [];
         let totalBytes = 0;
+        let isEof = false;
 
         while (totalBytes < maxBytes) {
           const result = (await cdpSession.send(
@@ -146,6 +147,7 @@ async function boundedStreamViaCdpFetch(
           }
 
           if (result.eof) {
+            isEof = true;
             break;
           }
         }
@@ -153,10 +155,12 @@ async function boundedStreamViaCdpFetch(
         // Close stream early if we hit the cap, safe to call even at eof.
         await cdpSession.send("IO.close" as never, { handle: stream } as never).catch(() => {});
 
+        // Assemble captured buffer before fulfill.
+        const fullBuf = Buffer.concat(chunks);
+
         // Fulfill the request so the page's fetch/navigation completes.
         // continueResponse fails after takeResponseBodyAsStream ("unable to continue
-        // request as is after body is taken"), so we use fulfillRequest with the
-        // original response status and headers (minus pseudo-headers), empty body.
+        // request as is after body is taken"), so fulfillRequest with captured body.
         const responseHeadersForFulfill = (evt.responseHeaders || [])
           .filter((h) => !h.name.startsWith(":"))
           .map((h) => ({ name: h.name, value: h.value }));
@@ -167,25 +171,27 @@ async function boundedStreamViaCdpFetch(
               requestId: evt.requestId,
               responseCode: status ?? 200,
               responseHeaders: responseHeadersForFulfill,
-              body: Buffer.from([]).toString("base64"),
+              body: fullBuf.toString("base64"),
             } as never,
           )
           .catch(() => {});
 
-        // Decode bounded buffer.
-        const fullBuf = Buffer.concat(chunks);
+        // Decode bounded buffer for tool return value.
         const decodeLen = Math.min(fullBuf.byteLength, maxBytes);
         const bodyText = new TextDecoder("utf-8").decode(fullBuf.subarray(0, decodeLen));
         const trimmed = bodyText.length > maxChars ? bodyText.slice(0, maxChars) : bodyText;
+
+        cleanup();
 
         resolve({
           url: reqUrl,
           status,
           headers,
           body: trimmed,
-          truncated: totalBytes > maxBytes ? true : undefined,
+          truncated: totalBytes >= maxBytes && !isEof ? true : undefined,
         });
       } catch (err) {
+        cleanup();
         reject(
           new Error(`Failed to read response body for "${reqUrl}": ${String(err)}`, {
             cause: err,
