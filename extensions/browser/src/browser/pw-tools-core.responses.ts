@@ -89,15 +89,6 @@ export async function responseBodyViaPlaywright(opts: {
   const headers = resp.headers?.();
   const maxBytes = maxChars * 4;
 
-  // Reject oversized responses before reading the body via content-length.
-  const contentLength = headers?.["content-length"];
-  if (contentLength) {
-    const len = Number(contentLength);
-    if (Number.isFinite(len) && len > maxBytes) {
-      return { url, status, headers: headers ?? {}, body: "", truncated: true };
-    }
-  }
-
   let bodyText = "";
   try {
     if (typeof resp.body === "function") {
@@ -107,8 +98,6 @@ export async function responseBodyViaPlaywright(opts: {
       // would need CDP-level streaming (Fetch.takeResponseBodyAsStream).
       const decodeLen = Math.min(buf.byteLength, maxBytes);
       bodyText = new TextDecoder("utf-8").decode(buf.subarray(0, decodeLen));
-    } else if (typeof resp.text === "function") {
-      bodyText = await resp.text();
     }
   } catch (err) {
     throw new Error(`Failed to read response body for "${url}": ${String(err)}`, { cause: err });

@@ -462,11 +462,12 @@ describe("pw-tools-core", () => {
     const off = vi.fn();
     setPwToolsCoreCurrentPage({ on, off });
 
+    const bodyBytes = new TextEncoder().encode('{"ok":true,"value":123}');
     const resp = {
       url: () => "https://example.com/api/data",
       status: () => 200,
       headers: () => ({ "content-type": "application/json" }),
-      text: async () => '{"ok":true,"value":123}',
+      body: async () => bodyBytes,
     };
 
     const p = mod.responseBodyViaPlaywright({
@@ -487,6 +488,113 @@ describe("pw-tools-core", () => {
     expect(res.url).toBe("https://example.com/api/data");
     expect(res.status).toBe(200);
     expect(res.body).toBe('{"ok":true');
+    expect(res.truncated).toBe(true);
+  });
+
+  it("decodes small response body fully via body()", async () => {
+    let responseHandler: ((resp: unknown) => void) | undefined;
+    const on = vi.fn((event: string, handler: (resp: unknown) => void) => {
+      if (event === "response") {
+        responseHandler = handler;
+      }
+    });
+    const off = vi.fn();
+    setPwToolsCoreCurrentPage({ on, off });
+
+    const bodyBytes = new TextEncoder().encode('{"status":"ok","value":"hello world"}');
+    const resp = {
+      url: () => "https://example.com/small",
+      status: () => 200,
+      headers: () => ({ "content-type": "application/json", "content-length": "41" }),
+      body: async () => bodyBytes,
+    };
+
+    const p = mod.responseBodyViaPlaywright({
+      cdpUrl: "http://127.0.0.1:18792",
+      targetId: "T1",
+      url: "**/small",
+      timeoutMs: 1000,
+    });
+
+    await Promise.resolve();
+    if (!responseHandler) throw new Error("expected response handler");
+    responseHandler(resp);
+
+    const res = await p;
+    expect(res.body).toBe('{"status":"ok","value":"hello world"}');
+    expect(res.truncated).toBeUndefined();
+  });
+
+  it("bounds decode for large response via subarray, preserving backward-compatible prefix", async () => {
+    let responseHandler: ((resp: unknown) => void) | undefined;
+    const on = vi.fn((event: string, handler: (resp: unknown) => void) => {
+      if (event === "response") {
+        responseHandler = handler;
+      }
+    });
+    const off = vi.fn();
+    setPwToolsCoreCurrentPage({ on, off });
+
+    // 500 KB response — well above maxChars*4 decode window
+    const largeBody = "x".repeat(500_000);
+    const bodyBytes = new TextEncoder().encode(largeBody);
+    const resp = {
+      url: () => "https://example.com/large",
+      status: () => 200,
+      headers: () => ({ "content-type": "text/plain", "content-length": "500000" }),
+      body: async () => bodyBytes,
+    };
+
+    const p = mod.responseBodyViaPlaywright({
+      cdpUrl: "http://127.0.0.1:18792",
+      targetId: "T1",
+      url: "**/large",
+      timeoutMs: 1000,
+      maxChars: 10,
+    });
+
+    await Promise.resolve();
+    if (!responseHandler) throw new Error("expected response handler");
+    responseHandler(resp);
+
+    const res = await p;
+    // Returns first 10 chars (backward-compatible prefix, not empty)
+    expect(res.body).toBe("x".repeat(10));
+    expect(res.truncated).toBe(true);
+  });
+
+  it("bounds decode for large response without content-length (chunked)", async () => {
+    let responseHandler: ((resp: unknown) => void) | undefined;
+    const on = vi.fn((event: string, handler: (resp: unknown) => void) => {
+      if (event === "response") {
+        responseHandler = handler;
+      }
+    });
+    const off = vi.fn();
+    setPwToolsCoreCurrentPage({ on, off });
+
+    const bodyBytes = new TextEncoder().encode("c".repeat(500_000));
+    const resp = {
+      url: () => "https://example.com/chunked",
+      status: () => 200,
+      headers: () => ({ "content-type": "text/plain" }),
+      body: async () => bodyBytes,
+    };
+
+    const p = mod.responseBodyViaPlaywright({
+      cdpUrl: "http://127.0.0.1:18792",
+      targetId: "T1",
+      url: "**/chunked",
+      timeoutMs: 1000,
+      maxChars: 5,
+    });
+
+    await Promise.resolve();
+    if (!responseHandler) throw new Error("expected response handler");
+    responseHandler(resp);
+
+    const res = await p;
+    expect(res.body).toBe("c".repeat(5));
     expect(res.truncated).toBe(true);
   });
 });
