@@ -153,9 +153,23 @@ async function boundedStreamViaCdpFetch(
         // Close stream early if we hit the cap, safe to call even at eof.
         await cdpSession.send("IO.close" as never, { handle: stream } as never).catch(() => {});
 
-        // Let the page receive its response (body delivery resumes).
+        // Fulfill the request so the page's fetch/navigation completes.
+        // continueResponse fails after takeResponseBodyAsStream ("unable to continue
+        // request as is after body is taken"), so we use fulfillRequest with the
+        // original response status and headers (minus pseudo-headers), empty body.
+        const responseHeadersForFulfill = (evt.responseHeaders || [])
+          .filter((h) => !h.name.startsWith(":"))
+          .map((h) => ({ name: h.name, value: h.value }));
         await cdpSession
-          .send("Fetch.continueResponse" as never, { requestId: evt.requestId } as never)
+          .send(
+            "Fetch.fulfillRequest" as never,
+            {
+              requestId: evt.requestId,
+              responseCode: status ?? 200,
+              responseHeaders: responseHeadersForFulfill,
+              body: Buffer.from([]).toString("base64"),
+            } as never,
+          )
           .catch(() => {});
 
         // Decode bounded buffer.

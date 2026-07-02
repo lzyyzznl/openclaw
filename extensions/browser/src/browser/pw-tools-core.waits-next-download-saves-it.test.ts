@@ -686,6 +686,7 @@ describe("pw-tools-core", () => {
         }
         if (
           method === "IO.close" ||
+          method === "Fetch.fulfillRequest" ||
           method === "Fetch.continueResponse" ||
           method === "Fetch.disable"
         ) {
@@ -761,8 +762,11 @@ describe("pw-tools-core", () => {
         size: 65536,
       });
       expect(ctx.cdpSend).toHaveBeenCalledWith("IO.close", { handle: "s1" });
-      expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.continueResponse", {
+      expect(ctx.cdpSend).toHaveBeenCalledWith("Fetch.fulfillRequest", {
         requestId: "r1",
+        responseCode: 200,
+        responseHeaders: [{ name: "content-type", value: "application/json" }],
+        body: "",
       });
     });
 
@@ -783,6 +787,7 @@ describe("pw-tools-core", () => {
         }
         if (
           method === "IO.close" ||
+          method === "Fetch.fulfillRequest" ||
           method === "Fetch.continueResponse" ||
           method === "Fetch.disable"
         ) {
