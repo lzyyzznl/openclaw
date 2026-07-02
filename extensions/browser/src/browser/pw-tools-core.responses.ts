@@ -87,12 +87,25 @@ export async function responseBodyViaPlaywright(opts: {
   const url = resp.url?.() || "";
   const status = resp.status?.();
   const headers = resp.headers?.();
+  const maxBytes = maxChars * 4;
+
+  // Reject oversized responses before reading the body via content-length.
+  const contentLength = headers?.["content-length"];
+  if (contentLength) {
+    const len = Number(contentLength);
+    if (Number.isFinite(len) && len > maxBytes) {
+      return { url, status, headers: headers ?? {}, body: "", truncated: true };
+    }
+  }
 
   let bodyText = "";
   try {
     if (typeof resp.body === "function") {
       const buf = await resp.body();
-      const decodeLen = Math.min(buf.byteLength, maxChars * 4);
+      // ponytail: Playwright body() still buffers the full response; the
+      // slice below avoids full-string decoding. Truly bounded capture
+      // would need CDP-level streaming (Fetch.takeResponseBodyAsStream).
+      const decodeLen = Math.min(buf.byteLength, maxBytes);
       bodyText = new TextDecoder("utf-8").decode(buf.subarray(0, decodeLen));
     } else if (typeof resp.text === "function") {
       bodyText = await resp.text();
