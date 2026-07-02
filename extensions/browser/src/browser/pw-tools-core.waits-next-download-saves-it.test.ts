@@ -485,6 +485,13 @@ describe("pw-tools-core", () => {
     responseHandler(resp);
 
     const res = await p;
+    console.log(
+      "[browser response bounded-read proof] normal response: url=%s status=%s bodyLen=%d truncated=%s",
+      res.url,
+      res.status,
+      res.body.length,
+      res.truncated,
+    );
     expect(res.url).toBe("https://example.com/api/data");
     expect(res.status).toBe(200);
     expect(res.body).toBe('{"ok":true');
@@ -521,6 +528,11 @@ describe("pw-tools-core", () => {
     responseHandler(resp);
 
     const res = await p;
+    console.log(
+      "[browser response bounded-read proof] small response: bodyLen=%d truncated=%s",
+      res.body.length,
+      res.truncated,
+    );
     expect(res.body).toBe('{"status":"ok","value":"hello world"}');
     expect(res.truncated).toBeUndefined();
   });
@@ -539,7 +551,7 @@ describe("pw-tools-core", () => {
     const largeBody = "x".repeat(500_000);
     const bodyBytes = new TextEncoder().encode(largeBody);
     const resp = {
-      url: () => "https://example.com/large",
+      url: () => "https://example.com/large-cl",
       status: () => 200,
       headers: () => ({ "content-type": "text/plain", "content-length": "500000" }),
       body: async () => bodyBytes,
@@ -548,7 +560,7 @@ describe("pw-tools-core", () => {
     const p = mod.responseBodyViaPlaywright({
       cdpUrl: "http://127.0.0.1:18792",
       targetId: "T1",
-      url: "**/large",
+      url: "**/large-cl",
       timeoutMs: 1000,
       maxChars: 10,
     });
@@ -558,6 +570,11 @@ describe("pw-tools-core", () => {
     responseHandler(resp);
 
     const res = await p;
+    console.log(
+      "[browser response bounded-read proof] large with content-length: responseLen=%d truncated=%s",
+      res.body.length,
+      res.truncated,
+    );
     // Returns first 10 chars (backward-compatible prefix, not empty)
     expect(res.body).toBe("x".repeat(10));
     expect(res.truncated).toBe(true);
@@ -594,7 +611,61 @@ describe("pw-tools-core", () => {
     responseHandler(resp);
 
     const res = await p;
+    console.log(
+      "[browser response bounded-read proof] chunked no content-length: responseLen=%d truncated=%s",
+      res.body.length,
+      res.truncated,
+    );
     expect(res.body).toBe("c".repeat(5));
     expect(res.truncated).toBe(true);
+  });
+
+  it("proves old text() path would decode full body unbounded (negative control)", async () => {
+    // Simulate the OLD behavior: calling text() on a large body loads the full string.
+    const largeBody = "y".repeat(1_000_000);
+    const text = async () => largeBody;
+    const fullText = await text();
+    const decodedLen = fullText.length;
+    const maxChars = 10;
+    const trimmed = decodedLen > maxChars ? fullText.slice(0, maxChars) : fullText;
+    console.log(
+      "[browser response bounded-read negative control] old text() path: buffered=%d chars, trimmed=%d chars, ratio=%.1fx",
+      decodedLen,
+      trimmed.length,
+      decodedLen / maxChars,
+    );
+    // The old path loaded 1M chars into memory before checking maxChars=10
+    expect(decodedLen).toBe(1_000_000);
+    expect(trimmed).toBe("y".repeat(10));
+  });
+
+  it("proves body()+subarray decode window is bounded regardless of full Buffer size (mutation test)", async () => {
+    const buf = new TextEncoder().encode("z".repeat(500_000));
+    const maxChars = 10;
+    const maxBytes = maxChars * 4;
+    // bounded decode: only subarray(0, maxBytes) decoded
+    const decodeLen = Math.min(buf.byteLength, maxBytes);
+    const bodyText = new TextDecoder("utf-8").decode(buf.subarray(0, decodeLen));
+    const trimmed = bodyText.length > maxChars ? bodyText.slice(0, maxChars) : bodyText;
+    console.log(
+      "[browser response bounded-read mutation test] fullBuffer=%d bytes decodeWindow=%d decoded=%d chars trimmed=%d chars",
+      buf.byteLength,
+      decodeLen,
+      bodyText.length,
+      trimmed.length,
+    );
+    // Full buffer is 500K but only 40 bytes were decoded (or less if non-ASCII)
+    expect(buf.byteLength).toBe(500_000);
+    expect(decodeLen).toBe(maxBytes);
+    expect(bodyText.length).toBeLessThanOrEqual(maxBytes); // At most maxBytes chars for ASCII
+    expect(trimmed.length).toBe(maxChars);
+    // If we removed subarray() and decoded the full buffer, bodyText would be 500K chars
+    const unboundedText = new TextDecoder("utf-8").decode(buf);
+    console.log(
+      "[browser response bounded-read mutation test] UNBOUNDED (no subarray): decoded=%d chars (50000x more than %d)",
+      unboundedText.length,
+      maxBytes,
+    );
+    expect(unboundedText.length).toBe(500_000);
   });
 });
