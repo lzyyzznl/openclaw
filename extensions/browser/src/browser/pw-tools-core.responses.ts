@@ -90,11 +90,12 @@ export async function responseBodyViaPlaywright(opts: {
 
   let bodyText = "";
   try {
-    if (typeof resp.text === "function") {
-      bodyText = await resp.text();
-    } else if (typeof resp.body === "function") {
+    if (typeof resp.body === "function") {
       const buf = await resp.body();
-      bodyText = new TextDecoder("utf-8").decode(buf);
+      const decodeLen = Math.min(buf.byteLength, maxChars * 4);
+      bodyText = new TextDecoder("utf-8").decode(buf.subarray(0, decodeLen));
+    } else if (typeof resp.text === "function") {
+      bodyText = await resp.text();
     }
   } catch (err) {
     throw new Error(`Failed to read response body for "${url}": ${String(err)}`, { cause: err });
