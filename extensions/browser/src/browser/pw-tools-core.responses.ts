@@ -107,7 +107,7 @@ async function bodySubarrayFallback(
   // Reject oversized responses before buffering via body(), when the
   // content-length header is available. For chunked/unknown-length responses,
   // body() still allocates the full buffer; subarray bounds string decoding.
-  const contentLength = headers ? Number(headers["content-length"]) : NaN;
+  const contentLength = headers ? Number(headers["content-length"]) : Number.NaN;
   const oversized = !Number.isNaN(contentLength) && contentLength > maxBytes;
 
   let bodyText = "";
