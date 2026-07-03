@@ -118,7 +118,12 @@ export function registerBrowserActionObserveCommands(
           defaultRuntime.writeJson(result);
           return;
         }
-        defaultRuntime.log(result.response.body);
+        const resp = result.response as { body?: string; truncated?: boolean };
+        if (!resp.body && resp.truncated) {
+          defaultRuntime.log("(response body omitted: content-length exceeds max-bytes limit)");
+        } else {
+          defaultRuntime.log(resp.body ?? "");
+        }
       });
     });
 }

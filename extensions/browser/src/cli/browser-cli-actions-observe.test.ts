@@ -40,6 +40,7 @@ describe("browser action observe commands", () => {
   beforeEach(() => {
     mocks.callBrowserRequest.mockClear();
     getBrowserCliRuntimeCapture().resetRuntimeCapture();
+    vi.clearAllMocks();
   });
 
   it("rejects non-decimal responsebody numeric flags before dispatch", async () => {
@@ -75,5 +76,33 @@ describe("browser action observe commands", () => {
     expect(request?.body?.timeoutMs).toBe(30000);
     expect(request?.body?.maxChars).toBe(100);
     expect(options?.timeoutMs).toBe(30000);
+  });
+
+  it("displays oversized message when response body is omitted", async () => {
+    mocks.callBrowserRequest.mockResolvedValueOnce({
+      response: { body: "", truncated: true },
+    });
+    const program = createActionObserveProgram();
+    const cap = getBrowserCliRuntimeCapture();
+    cap.resetRuntimeCapture();
+
+    await program.parseAsync(["browser", "responsebody", "**/api"], { from: "user" });
+
+    const logged = cap.defaultRuntime.log.mock.calls.flat().join(" ");
+    expect(logged).toContain("response body omitted");
+  });
+
+  it("prints body normally when not truncated", async () => {
+    mocks.callBrowserRequest.mockResolvedValueOnce({
+      response: { body: "hello world" },
+    });
+    const program = createActionObserveProgram();
+    const cap = getBrowserCliRuntimeCapture();
+    cap.resetRuntimeCapture();
+
+    await program.parseAsync(["browser", "responsebody", "**/api"], { from: "user" });
+
+    const logged = cap.defaultRuntime.log.mock.calls.flat().join(" ");
+    expect(logged).toBe("hello world");
   });
 });
