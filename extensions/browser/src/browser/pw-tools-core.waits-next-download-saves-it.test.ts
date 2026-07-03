@@ -539,7 +539,7 @@ describe("pw-tools-core", () => {
     expect(res.truncated).toBeUndefined();
   });
 
-  it("bounds decode for large response via subarray, preserving backward-compatible prefix", async () => {
+  it("rejects large response early when content-length exceeds maxBytes", async () => {
     let responseHandler: ((resp: unknown) => void) | undefined;
     const on = vi.fn((event: string, handler: (resp: unknown) => void) => {
       if (event === "response") {
@@ -579,9 +579,9 @@ describe("pw-tools-core", () => {
       res.body.length,
       res.truncated,
     );
-    // Returns first 10 chars (backward-compatible prefix, not empty)
-    expect(res.body).toBe("x".repeat(10));
-    expect(res.truncated).toBe(true);
+    // Content-length pre-check rejects before body() — returns empty
+    expect(res.body).toBe("");
+    expect(res.truncated).toBeUndefined();
   });
 
   it("bounds decode for large response without content-length (chunked)", async () => {

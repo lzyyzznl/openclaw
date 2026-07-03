@@ -104,12 +104,16 @@ async function bodySubarrayFallback(
   const status = resp.status?.();
   const headers = resp.headers?.();
 
+  // Reject oversized responses before buffering via body(), when the
+  // content-length header is available. For chunked/unknown-length responses,
+  // body() still allocates the full buffer; subarray bounds string decoding.
+  const contentLength = headers ? Number(headers["content-length"]) : NaN;
+  const oversized = !Number.isNaN(contentLength) && contentLength > maxBytes;
+
   let bodyText = "";
   try {
-    if (typeof resp.body === "function") {
+    if (typeof resp.body === "function" && !oversized) {
       const buf = await resp.body();
-      // ponytail: body() buffers the full response; subarray avoids
-      // full-string decoding, the main memory saving vs resp.text().
       const decodeLen = Math.min(buf.byteLength, maxBytes);
       bodyText = new TextDecoder("utf-8").decode(buf.subarray(0, decodeLen));
     }
