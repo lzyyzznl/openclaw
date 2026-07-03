@@ -127,6 +127,6 @@ async function bodySubarrayFallback(
     status,
     headers,
     body: trimmed,
-    truncated: bodyText.length > maxChars ? true : undefined,
+    truncated: bodyText.length > maxChars || oversized ? true : undefined,
   };
 }

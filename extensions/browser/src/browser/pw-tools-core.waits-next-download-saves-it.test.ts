@@ -581,7 +581,7 @@ describe("pw-tools-core", () => {
     );
     // Content-length pre-check rejects before body() — returns empty
     expect(res.body).toBe("");
-    expect(res.truncated).toBeUndefined();
+    expect(res.truncated).toBe(true);
   });
 
   it("bounds decode for large response without content-length (chunked)", async () => {
