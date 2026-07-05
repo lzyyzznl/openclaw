@@ -114,6 +114,8 @@ async function bodySubarrayFallback(
   try {
     if (typeof resp.body === "function" && !oversized) {
       const buf = await resp.body();
+      // ponytail: subarray bounds string alloc. maxBytes = maxChars * 4
+      // guarantees ≥maxChars chars decoded (UTF-8 max 4 bytes/char).
       const decodeLen = Math.min(buf.byteLength, maxBytes);
       bodyText = new TextDecoder("utf-8").decode(buf.subarray(0, decodeLen));
     }
