@@ -74,8 +74,10 @@ type CronListCallerScopeContext = {
 };
 
 function cronJobReadView(job: CronJob) {
+  const { pendingCatchupDeferral: _pd, ...state } = job.state;
   return {
     ...job,
+    state,
     nextRunAtMs: job.state.nextRunAtMs,
     lastRunAtMs: job.state.lastRunAtMs,
     lastRunStatus: job.state.lastRunStatus ?? job.state.lastStatus,
