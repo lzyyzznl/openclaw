@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testing as cliBackendsTesting } from "../agents/cli-backends.test-support.js";
+import { parseJsonStringArray } from "./gateway-cli-backend.live-helpers.js";
 
 vi.mock("./client-start-readiness.js", () => ({
   startGatewayClientWhenEventLoopReady: async (client: { start: () => void }) => {
@@ -369,5 +370,37 @@ describe("gateway cli backend live helpers", () => {
       ),
     ).toBe(false);
     expect(shouldRetryCliCronMcpProbeReply("live-mcp-abc123")).toBe(false);
+  });
+
+  describe("parseJsonStringArray malformed JSON guard", () => {
+    it("throws descriptive error for malformed JSON instead of bare SyntaxError", () => {
+      expect(() => parseJsonStringArray("test-param", "{bad json}")).toThrow(
+        "test-param must be a JSON array of strings.",
+      );
+    });
+
+    it("throws descriptive error for truncated JSON", () => {
+      expect(() => parseJsonStringArray("test-param", '["item1"')).toThrow(
+        "test-param must be a JSON array of strings.",
+      );
+    });
+
+    it("returns undefined for empty/undefined input", () => {
+      expect(parseJsonStringArray("test", "")).toBeUndefined();
+      expect(parseJsonStringArray("test", undefined)).toBeUndefined();
+    });
+
+    it("still validates non-array parsed values", () => {
+      expect(() => parseJsonStringArray("test-param", '"string"')).toThrow(
+        "test-param must be a JSON array of strings.",
+      );
+      expect(() => parseJsonStringArray("test-param", "42")).toThrow(
+        "test-param must be a JSON array of strings.",
+      );
+    });
+
+    it("returns parsed array for valid input", () => {
+      expect(parseJsonStringArray("test-param", '["a", "b"]')).toEqual(["a", "b"]);
+    });
   });
 });
