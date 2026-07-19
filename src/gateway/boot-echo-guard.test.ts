@@ -92,4 +92,17 @@ describe("stripBootEchoFromOutboundText", () => {
     const outbound = "A".repeat(79) + emoji; // 81 code units, < 80 A's shared
     expect(stripBootEchoFromOutboundText(outbound, bootPrompt)).toBe(outbound);
   });
+
+  it("accepts boundary-expanded windows that meet the echo minimum", () => {
+    // Regression: sliceUtf16SafeMinLen must accept windows expanded past
+    // minLen by a surrogate-boundary adjustment, so a complete echo whose
+    // candidate windows spill over a surrogate pair is still detected.
+    // The minimum-length guard (>=) replaces the exact-length guard (===)
+    // for this purpose.
+    const emoji = "\u{1F600}"; // 😀
+    const bootPrompt = "A".repeat(50) + emoji + "A".repeat(30); // 82 chars
+    // Outbound echoes a full 80-char+ substring crossing the surrogate
+    const outbound = "prefix: " + "A".repeat(50) + emoji + "A".repeat(29);
+    expect(stripBootEchoFromOutboundText(outbound, bootPrompt)).toBe("");
+  });
 });
