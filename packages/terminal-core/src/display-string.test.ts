@@ -44,4 +44,21 @@ describe("displayString", () => {
     expect(displayString(`${openclawHome}/state`)).toBe("$OPENCLAW_HOME/state");
     expect(displayString(`${openclawHome}2/state`)).toBe(`${openclawHome}2/state`);
   });
+
+  // PR #111398: literal $& in home path must not be interpreted as
+  // String.replace $ pattern. Without a replacer function, $& would be
+  // resolved to the matched substring ("~"), corrupting the resolved path.
+  it("prevents $ pattern injection when home contains literal $&", () => {
+    const dollarHome = path.resolve("test-home", "$&user");
+    stubHome(dollarHome, "~");
+
+    const result = displayString(`${dollarHome}/project`);
+    console.log(`  [evidence] HOME=${dollarHome} OPENCLAW_HOME=~`);
+    console.log(`  [evidence] input: ${dollarHome}/project`);
+    console.log(`  [evidence] output: ${result}`);
+    // When OPENCLAW_HOME is set, prefix is "$OPENCLAW_HOME", not "~".
+    // The critical thing: the $& was NOT interpreted as a replacement pattern.
+    // If the bug were present, output would contain "~" (from $& → matched "~").
+    expect(result).toBe("$OPENCLAW_HOME/project");
+  });
 });
